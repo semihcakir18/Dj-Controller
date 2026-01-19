@@ -2,6 +2,30 @@ import * as THREE from "three";
 
 export const interactables = [];
 
+/**
+ * ARCHITECTURE PATTERN FOR INTERACTABLES:
+ *
+ * Each interactable (jog, knob, fader, etc.) MUST have its own material instance.
+ * This is critical because:
+ * - Materials have mutable state (emissive, color, etc.)
+ * - Hover/active effects modify material properties
+ * - Shared materials would cause all instances to change together
+ *
+ * Pattern to follow:
+ * 1. Textures CAN be shared (they're read-only) - create once, reuse
+ * 2. Materials MUST be unique - create new instance for each object
+ * 3. Each creation function (jog, knob, fader) should be self-contained
+ *
+ * Example:
+ * function newControl(x) {
+ *   const material = new THREE.MeshStandardMaterial({ ... }); // Unique material
+ *   const mesh = new THREE.Mesh(geometry, material);
+ *   mesh.userData.type = "controlType";
+ *   interactables.push(mesh);
+ *   group.add(mesh);
+ * }
+ */
+
 // Create texture for jog with asymmetric marker (colorful stripe)
 function createJogTexture() {
   const size = 512;
@@ -88,19 +112,9 @@ export function createDJController() {
     roughness: 0.9,
   });
 
-  const jogMaterial = new THREE.MeshStandardMaterial({
-  map: createJogTexture(),
-  roughness: 0.4,
-  metalness: 0.6,
-});
-const knobMaterial = new THREE.MeshStandardMaterial({
-  map: createKnobTexture(),
-  roughness: 0.6,
-  metalness: 0.3,
-});
-const metalMat = new THREE.MeshStandardMaterial({
-  color: 0x777777,
-});
+  // Create textures once (can be shared - textures are immutable)
+  const jogTexture = createJogTexture();
+  const knobTexture = createKnobTexture();
 
 
 
@@ -117,6 +131,14 @@ const metalMat = new THREE.MeshStandardMaterial({
   // ================= JOG =================
   function jog(x) {
   const jogHeight = 0.15; // Taller for visibility
+
+  // Create unique material for each jog
+  const jogMaterial = new THREE.MeshStandardMaterial({
+    map: jogTexture.clone(),
+    roughness: 0.4,
+    metalness: 0.6,
+  });
+
   const j = new THREE.Mesh(
     new THREE.CylinderGeometry(0.9, 0.9, jogHeight, 48),
     jogMaterial
@@ -139,6 +161,14 @@ const metalMat = new THREE.MeshStandardMaterial({
   // ================= KNOB =================
   function knob(x, z) {
     const knobHeight = 0.25; // Taller for better visibility and grip
+
+    // Create unique material for each knob
+    const knobMaterial = new THREE.MeshStandardMaterial({
+      map: knobTexture.clone(),
+      roughness: 0.6,
+      metalness: 0.3,
+    });
+
     const k = new THREE.Mesh(
   new THREE.CylinderGeometry(0.12, 0.12, knobHeight, 20),
   knobMaterial
@@ -165,6 +195,7 @@ const metalMat = new THREE.MeshStandardMaterial({
 
   // ================= FADER =================
   function fader(x) {
+    // Track material (non-interactable, can be shared per fader)
     const trackMat = new THREE.MeshStandardMaterial({
       color: 0x666666,
       roughness: 0.7,
@@ -178,9 +209,16 @@ const metalMat = new THREE.MeshStandardMaterial({
     track.position.set(x, surfaceY - 0.02, 0.9);
     group.add(track);
 
+    // Handle material - unique for each fader handle (interactable)
+    const handleMat = new THREE.MeshStandardMaterial({
+      color: 0x777777,
+      roughness: 0.5,
+      metalness: 0.6,
+    });
+
     const handle = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.08, 0.18),
-      metalMat
+      handleMat
     );
     handle.position.set(x, surfaceY + 0.02, 0.9);
 

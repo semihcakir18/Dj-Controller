@@ -3,8 +3,11 @@ html, body {
   padding: 0;
   overflow: hidden;
   background: #0b0f14;
+  cursor: default;
+  transition: cursor 0.1s ease;
 }
 
 canvas {
   display: block;
+  user-select: none;
 }
