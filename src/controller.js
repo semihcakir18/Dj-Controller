@@ -2,6 +2,11 @@ import * as THREE from "three";
 
 export const interactables = [];
 
+// Knob rotation constants (270° range, centered at 12 o'clock)
+// Offset by -90° so bypass (0.5) points up (12 o'clock) instead of right (3 o'clock)
+const KNOB_MIN_ANGLE = -Math.PI * 3 / 4 - Math.PI / 2; // -225° (7:30 position)
+const KNOB_RANGE = Math.PI * 3 / 2; // 270°
+
 /**
  * ARCHITECTURE PATTERN FOR INTERACTABLES:
  *
@@ -129,7 +134,12 @@ export function createDJController() {
   const surfaceY = 0.2; // üst yüzey referansı (base height 0.4 / 2 = 0.2)
 
   // ================= JOG =================
-  function jog(x) {
+  /**
+   * Create a jog wheel control
+   * @param {number} x - X position
+   * @param {number} deckId - Which deck (1 or 2)
+   */
+  function jog(x, deckId) {
   const jogHeight = 0.15; // Taller for visibility
 
   // Create unique material for each jog
@@ -148,18 +158,28 @@ export function createDJController() {
   // Position so bottom sits on surface
   j.position.set(x, surfaceY + jogHeight / 2, -0.6);
 
-  j.userData.type = "jog";
+  j.userData = {
+    type: "jog",
+    deckId: deckId
+  };
   interactables.push(j);
   group.add(j);
 }
 
 
 
-  jog(-2.1);
-  jog(2.1);
+  jog(-2.1, 1); // Left jog - Deck 1
+  jog(2.1, 2);  // Right jog - Deck 2
 
   // ================= KNOB =================
-  function knob(x, z) {
+  /**
+   * Create a knob control
+   * @param {number} x - X position
+   * @param {number} z - Z position
+   * @param {string} controlType - What this knob controls ('filter', 'eqLow', 'eqHigh')
+   * @param {number} deckId - Which deck (1 or 2)
+   */
+  function knob(x, z, controlType, deckId) {
     const knobHeight = 0.25; // Taller for better visibility and grip
 
     // Create unique material for each knob
@@ -179,22 +199,39 @@ export function createDJController() {
     // Position so bottom sits on surface
     k.position.set(x, surfaceY + knobHeight / 2, z);
 
+    // Knob state: value drives rotation (not the other way around)
+    // Each knob has its own independent control type
     k.userData = {
       type: "knob",
-      value: 0,
+      controlType: controlType,  // 'filter', 'eqLow', 'eqHigh'
+      deckId: deckId,             // 1 or 2
+      value: 0.5, // Start at neutral/bypass position (centered)
     };
+
+    // Set initial rotation from value
+    k.rotation.y = KNOB_MIN_ANGLE + k.userData.value * KNOB_RANGE;
 
     interactables.push(k);
     group.add(k);
   }
 
-  [-0.2, 0.05, 0.3].forEach((z) => {
-    knob(-1.2, z);
-    knob(1.2, z);
-  });
+  // Left deck (Deck 1) knobs
+  knob(-1.2, -0.2, 'filter', 1);  // Front: Bipolar filter
+  knob(-1.2, 0.05, 'eqLow', 1);   // Middle: EQ Low (bass)
+  knob(-1.2, 0.3, 'eqHigh', 1);   // Back: EQ High (treble)
+
+  // Right deck (Deck 2) knobs
+  knob(1.2, -0.2, 'filter', 2);
+  knob(1.2, 0.05, 'eqLow', 2);
+  knob(1.2, 0.3, 'eqHigh', 2);
 
   // ================= FADER =================
-  function fader(x) {
+  /**
+   * Create a fader control (channel volume)
+   * @param {number} x - X position
+   * @param {number} deckId - Which deck (1 or 2)
+   */
+  function fader(x, deckId) {
     // Track material (non-interactable, can be shared per fader)
     const trackMat = new THREE.MeshStandardMaterial({
       color: 0x666666,
@@ -224,6 +261,8 @@ export function createDJController() {
 
     handle.userData = {
       type: "fader",
+      controlType: "volume", // Channel volume control
+      deckId: deckId,        // 1 or 2
       minZ: 0.3,
       maxZ: 1.5,
     };
@@ -232,8 +271,62 @@ export function createDJController() {
     group.add(handle);
   }
 
-  fader(-0.5);
-  fader(0.5);
+  // Left fader (Deck 1) - Channel volume
+  fader(-0.5, 1);
+  // Right fader (Deck 2) - Channel volume
+  fader(0.5, 2);
+
+  // ================= CROSSFADER =================
+  /**
+   * Create horizontal crossfader slider (center position, controls mix between decks)
+   */
+  function crossfader() {
+    // Track material (non-interactable)
+    const trackMat = new THREE.MeshStandardMaterial({
+      color: 0x555555,
+      roughness: 0.7,
+      metalness: 0.3,
+    });
+
+    // Horizontal rail
+    const track = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.05, 0.15),
+      trackMat
+    );
+    track.position.set(0, surfaceY - 0.02, 1.8);
+    group.add(track);
+
+    // Handle material - unique for crossfader handle (interactable)
+    const handleMat = new THREE.MeshStandardMaterial({
+      color: 0xff6600, // Orange color to distinguish from channel faders
+      roughness: 0.5,
+      metalness: 0.6,
+    });
+
+    const handle = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.08, 0.28),
+      handleMat
+    );
+
+    // Start position: full left (Deck A only, crossfaderValue = 0.0)
+    const minX = -0.9;
+    const maxX = 0.9;
+    const startX = minX; // Full left = Deck A only
+
+    handle.position.set(startX, surfaceY + 0.02, 1.8);
+
+    handle.userData = {
+      type: "crossfader",
+      minX: minX,
+      maxX: maxX,
+      value: 0.0, // Start at 0.0 (Deck A only)
+    };
+
+    interactables.push(handle);
+    group.add(handle);
+  }
+
+  crossfader();
 
   return group;
 }
